@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot API</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f3f6fb;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 850px;
+            margin: 40px auto;
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px #0001;
+        }
+
+        h1 {
+            color: #1769f5;
+        }
+
+        #messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 16px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+
+        .message {
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+        }
+
+        .user {
+            background: #e5efff;
+        }
+
+        .assistant {
+            background: #f0f0f0;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .toolbar p { color: #667085; }
+        button.secondary { background: #667085; }
+
+        input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+
+        button {
+            background: #1769f5;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: wait;
+        }
+
+        @media (max-width: 600px) {
+            .container { margin: 0; min-height: 100vh; border-radius: 0; padding: 16px; }
+            #messages { height: 55vh; }
+            .input-row { align-items: stretch; }
+            button { padding: 12px; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>AI Chatbot</h1>
+        <div class="toolbar">
+            <p>Session-based conversational assistant</p>
+            <button id="new-chat" class="secondary" type="button">New chat</button>
+        </div>
+
+        <div id="messages"></div>
+
+        <div class="input-row">
+            <input id="message" placeholder="Type your message..." maxlength="5000">
+            <button id="send">Send</button>
+        </div>
+
+        <p id="status"></p>
+    </div>
+
+    <script>
+        let sessionId =
+            localStorage.getItem("chat_session_id") ||
+            crypto.randomUUID();
+
+        localStorage.setItem("chat_session_id", sessionId);
+
+        const messages = document.getElementById("messages");
+        const input = document.getElementById("message");
+        const sendButton = document.getElementById("send");
+        const status = document.getElementById("status");
+        const newChatButton = document.getElementById("new-chat");
+
+        function addMessage(role, text) {
+            const element = document.createElement("div");
+
+            element.className = `message ${role}`;
+            element.textContent = text;
+
+            messages.appendChild(element);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            addMessage("user", message);
+            input.value = "";
+            sendButton.disabled = true;
+            newChatButton.disabled = true;
+            status.textContent = "Assistant is thinking...";
+
+            try {
+                const response = await fetch("/chat", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        message: message
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.detail || "Request failed"
+                    );
+                }
+
+                addMessage("assistant", data.reply);
+            } catch (error) {
+                addMessage(
+                    "assistant",
+                    "Error: " + error.message
+                );
+            } finally {
+                status.textContent = "";
+                sendButton.disabled = false;
+                newChatButton.disabled = false;
+                input.focus();
+            }
+        }
+
+        sendButton.addEventListener("click", sendMessage);
+
+        newChatButton.addEventListener("click", async () => {
+            sendButton.disabled = true;
+            newChatButton.disabled = true;
+            try {
+                await fetch(`/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+            } catch (_) {
+                // A new local session still starts cleanly if the server cannot be reached.
+            }
+            sessionId = crypto.randomUUID();
+            localStorage.setItem("chat_session_id", sessionId);
+            messages.replaceChildren();
+            status.textContent = "Started a new conversation.";
+            sendButton.disabled = false;
+            newChatButton.disabled = false;
+            input.focus();
+        });
+
+        input.addEventListener("keydown", event => {
+            if (event.key === "Enter") {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+
+</html>
